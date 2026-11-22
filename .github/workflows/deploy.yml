@@ -1,8 +1,8 @@
 name: Test and deploy
 
+# Tests and builds every push; publishes to GitHub Pages from the repository's default branch.
 on:
   push:
-    branches: [main]
   pull_request:
 
 permissions:
@@ -26,13 +26,13 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - if: github.ref == 'refs/heads/main'
+      - if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
   deploy:
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
     needs: build
     runs-on: ubuntu-latest
     environment:

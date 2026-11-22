@@ -7,9 +7,9 @@ It is an installable web app (PWA). There is no app store step and no server to 
 
 ## Getting it on your phone
 
-1. Merge this code to `main`.
+1. Put this code on the repository's default branch.
 2. In the GitHub repository: **Settings → Pages → Source: GitHub Actions**. The included workflow then builds and
-   publishes the app on every push to `main`, at `https://<your-user>.github.io/mahjong-4-dayz/`.
+   publishes the app on every push to the default branch, at `https://<your-user>.github.io/mahjong-4-dayz/`.
 3. Open that address on the phone.
    - iPhone: Safari → Share → **Add to Home Screen**
    - Android: Chrome → menu → **Install app**
