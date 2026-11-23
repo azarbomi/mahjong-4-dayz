@@ -750,3 +750,32 @@ textarea {
     transition: none;
   }
 }
+
+/* ---------- rearranging and the winning hand ---------- */
+.rack .tile {
+  touch-action: none;
+}
+.tile.dragging {
+  z-index: 10;
+  transition: none;
+  box-shadow: 0 8px 18px rgb(0 0 0 / 0.35);
+  pointer-events: none;
+}
+.link.sort {
+  margin-left: auto;
+  min-height: 32px;
+  flex: none;
+}
+.mine-head .exposures {
+  min-width: 0;
+}
+.win-hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin-top: 4px;
+}
+.win-hand .tile.sm {
+  width: 22px;
+  height: 30px;
+}

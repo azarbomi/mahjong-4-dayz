@@ -259,19 +259,37 @@ export function suggestPass(card: Card, info: Info, n: number): Tile[] {
 export interface Win {
   hand: Hand;
   jokerless: boolean;
+  /** The hand in the order written on the card: each group's actual tiles, jokers included. */
+  groups: { tiles: Tile[]; exposed: boolean }[];
 }
 
 export function findMahjong(card: Card, rack: Tile[], exposures: Exposure[]): Win | null {
   if (rack.length + exposures.reduce((s, e) => s + e.tiles.length, 0) !== 14) return null;
   const c = makeCtx({ rack, exposures, others: [], discards: [] });
-  let best: Hand | null = null;
+  let best: { hand: Hand; v: Variant; mask: number } | null = null;
   for (const v of card.variants) {
     const hand = card.hands[v.hand];
-    if (evalVariant(hand, v, c) && R.away === 0 && (!best || hand.value > best.value)) best = hand;
+    if (evalVariant(hand, v, c) && R.away === 0 && (!best || hand.value > best.hand.value)) best = { hand, v, mask: R.mask };
   }
   if (!best) return null;
-  const jokerless = !best.singlesAndPairs && !rack.includes(JOKER) && !exposures.some((e) => e.tiles.includes(JOKER));
-  return { hand: best, jokerless };
+  const { hand, v, mask } = best;
+  const jokerless = !hand.singlesAndPairs && !rack.includes(JOKER) && !exposures.some((e) => e.tiles.includes(JOKER));
+  // Pair each exposure with the group it fills (same matching order as evalVariant).
+  const exposedTiles = new Map<number, Tile[]>();
+  for (const e of exposures) {
+    const gi = v.groups.findIndex((g, i) => !exposedTiles.has(i) && g.t === e.tile && g.n === e.tiles.length);
+    exposedTiles.set(gi, e.tiles);
+  }
+  const status = detail(hand, v, c, 0, 0, false, mask).groups;
+  const groups = status
+    .map((g, gi) => ({
+      i: g.i,
+      exposed: g.exposed,
+      tiles: exposedTiles.get(gi) ?? [...Array<Tile>(g.have).fill(g.t), ...Array<Tile>(g.jokers).fill(JOKER)],
+    }))
+    .sort((x, y) => x.i - y.i)
+    .map(({ tiles, exposed }) => ({ tiles, exposed }));
+  return { hand, jokerless, groups };
 }
 
 export interface CallAdvice {

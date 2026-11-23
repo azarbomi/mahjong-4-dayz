@@ -34,6 +34,8 @@ export interface Result {
   /** Seat that threw the winning tile, or null when self-drawn. */
   discarder?: number | null;
   jokerless?: boolean;
+  /** The winning hand laid out in card order, group by group. */
+  groups?: { tiles: Tile[]; exposed: boolean }[];
   payments: number[];
 }
 
@@ -208,6 +210,7 @@ function finish(s: GameState, winner: number | null, card: Card, discarder: numb
     value: win.hand.value,
     discarder,
     jokerless: win.jokerless,
+    groups: win.groups,
     payments,
   };
   say(s, `{${winner}} declares Mahjong: ${win.hand.text} (${win.hand.value})`);

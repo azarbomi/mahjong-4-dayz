@@ -46,6 +46,12 @@ A dot on a rack tile marks the suggested pass or discard, and a discard you can 
 "pass". Tap a hand to highlight its tiles in your rack. Hints can be turned off from the home screen or the game
 menu.
 
+## Your rack
+
+Drag a tile to move it; your arrangement is kept as tiles come and go and is remembered on your phone. **Sort**
+puts the rack back in standard order. When someone wins, their hand is laid out group by group in the order it is
+written on the card, with jokers shown in the groups they complete.
+
 ## The card
 
 The app ships with an original card of American-style hands. It is **not** the National Mah Jongg League card,

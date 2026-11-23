@@ -92,6 +92,19 @@ describe('analysis', () => {
     expect(all.some((h) => h.hand.text === 'FF 2222a 4444a 6666a')).toBe(false);
     expect(all.some((h) => h.hand.concealed)).toBe(false);
   });
+  it('lays out a winning hand in card order with jokers in their groups', () => {
+    // FF 2222a 4444a 6666a with the 4s exposed (one joker) and a joker in the 6s.
+    const exposures = [{ tile: b(4), tiles: [b(4), b(4), JOKER, b(4)] }];
+    const rack = [b(6), JOKER, b(2), FLOWER, b(6), b(2), b(6), FLOWER, b(2), b(2)];
+    const win = findMahjong(card, rack, exposures)!;
+    expect(win.hand.text).toBe('FF 2222a 4444a 6666a');
+    expect(win.groups).toEqual([
+      { tiles: [FLOWER, FLOWER], exposed: false },
+      { tiles: rep(b(2), 4), exposed: false },
+      { tiles: [b(4), b(4), JOKER, b(4)], exposed: true },
+      { tiles: [b(6), b(6), b(6), JOKER], exposed: false },
+    ]);
+  });
   it('suggests discarding the tile that helps least', () => {
     expect(suggestDiscard(card, info([...evens, NORTH]))).toBe(NORTH);
   });
@@ -194,7 +207,12 @@ describe('game', () => {
       const s = playOut(seed);
       expect(s.phase).toBe('over');
       expect(s.result!.payments.reduce((a, x) => a + x, 0)).toBe(0);
-      if (s.result!.winner !== null) wins++;
+      if (s.result!.winner !== null) {
+        wins++;
+        const w = s.players[s.result!.winner];
+        const held = [...w.rack, ...w.exposures.flatMap((e) => e.tiles)];
+        expect(countTiles(s.result!.groups!.flatMap((g) => g.tiles))).toEqual(countTiles(held));
+      }
     }
     console.log(`bot games won: ${wins}/40`);
     expect(wins).toBeGreaterThan(0);

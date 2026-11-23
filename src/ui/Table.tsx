@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { adviseCall, analyze, findMahjong, suggestDiscard, suggestPass } from '../engine/analysis';
 import { getCard } from '../engine/card';
-import { JOKER, tileName, type Tile } from '../engine/tiles';
+import { JOKER, sortTiles, tileName, type Tile } from '../engine/tiles';
 import { infoFromView } from '../engine/view';
 import { HintSheet, HintStrip } from './Hints';
 import { CardList } from './CardScreen';
@@ -12,6 +12,37 @@ import { Backs, TileView } from './Tile';
 const GROUP_NAMES: Record<number, string> = { 3: 'Pung', 4: 'Kong', 5: 'Quint', 6: 'Sextet' };
 const WIND_ORDER = ['E', 'S', 'W', 'N'];
 const POSITION = ['You', 'Right', 'Across', 'Left'];
+
+const RACK_GAP = 5;
+
+/** The player's own arrangement applied to the tiles they hold now: kept tiles stay put, new ones go on the end. */
+function arrange(pref: Tile[], held: Tile[]): Tile[] {
+  const left = [...held];
+  const out: Tile[] = [];
+  for (const t of pref) {
+    const i = left.indexOf(t);
+    if (i >= 0) {
+      left.splice(i, 1);
+      out.push(t);
+    }
+  }
+  return [...out, ...left];
+}
+
+function moveItem<T>(arr: T[], from: number, to: number): T[] {
+  const out = [...arr];
+  out.splice(to, 0, ...out.splice(from, 1));
+  return out;
+}
+
+function loadOrder(key: string): Tile[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(key) ?? '[]');
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'number') : [];
+  } catch {
+    return [];
+  }
+}
 
 function Countdown({ seconds, resetKey }: { seconds: number; resetKey: string }) {
   const [left, setLeft] = useState(seconds);
@@ -43,12 +74,69 @@ export function Table({ session, onLeave }: { session: Session; onLeave: () => v
     discardsRef.current?.scrollTo({ top: discardsRef.current.scrollHeight });
   }, [view.discards.length]);
 
+  // The rack is shown in the player's own order, remembered per room on this phone.
+  const orderKey = `mj4d-order-${lobby.code}`;
+  const [pref, setPref] = useState<Tile[]>(() => loadOrder(orderKey));
+  const rack = useMemo(() => arrange(pref, view.rack), [pref, view.rack]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(orderKey, JSON.stringify(rack));
+    } catch {
+      /* storage unavailable */
+    }
+    if (rack.length !== pref.length || rack.some((t, i) => t !== pref[i])) setPref(rack);
+  }, [rack, pref, orderKey]);
+
+  // Dragging a rack tile to a new position.
+  const rackRef = useRef<HTMLDivElement>(null);
+  const rackNow = useRef(rack);
+  rackNow.current = rack;
+  const suppressClick = useRef(false);
+  const [drag, setDrag] = useState<{ from: number; over: number; x: number; y: number } | null>(null);
+  const geometry = () => {
+    const r = rackRef.current!.getBoundingClientRect();
+    const top = r.top + parseFloat(getComputedStyle(rackRef.current!).paddingTop);
+    const w = (r.width - 6 * RACK_GAP) / 7;
+    return { left: r.left, top, w, h: (w * 80) / 60 };
+  };
+  const slotAt = (x: number, y: number) => {
+    const g = geometry();
+    const col = Math.max(0, Math.min(6, Math.floor((x - g.left) / (g.w + RACK_GAP))));
+    const row = Math.max(0, Math.floor((y - g.top) / (g.h + RACK_GAP)));
+    return Math.min(rackNow.current.length - 1, row * 7 + col);
+  };
+  const startDrag = (from: number, e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    let active = false;
+    const move = (ev: PointerEvent) => {
+      if (!active && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 8) return;
+      active = true;
+      setDrag({ from, over: slotAt(ev.clientX, ev.clientY), x: ev.clientX, y: ev.clientY });
+    };
+    const end = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+      if (!active) return;
+      if (ev.type === 'pointerup') setPref(moveItem(rackNow.current, from, slotAt(ev.clientX, ev.clientY)));
+      setDrag(null);
+      // The click that follows a drag must not select the tile.
+      suppressClick.current = true;
+      setTimeout(() => (suppressClick.current = false), 60);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+  };
+
   const name = (i: number) => (i === me ? 'You' : lobby.seats[i].name);
   const myTurn = view.phase === 'play' && view.stage === 'discard' && view.turn === me;
   const ch = view.phase === 'charleston' ? view.ch : null;
   const passing = !!ch && view.pending && (ch.stage === 'pass' || ch.stage === 'courtesyPass');
 
-  const rackKey = view.rack.join(',') + view.phase + view.stage + (ch?.stage ?? '') + (ch?.direction ?? '');
+  const rackKey = rack.join(',') + view.phase + view.stage + (ch?.stage ?? '') + (ch?.direction ?? '');
   useEffect(() => setSel([]), [rackKey]);
 
   useEffect(() => {
@@ -75,7 +163,7 @@ export function Table({ session, onLeave }: { session: Session; onLeave: () => v
   const suggestIdx = useMemo(() => {
     const idx = new Set<number>();
     const pool = [...suggested];
-    view.rack.forEach((t, i) => {
+    rack.forEach((t, i) => {
       const k = pool.indexOf(t);
       if (k >= 0) {
         pool.splice(k, 1);
@@ -83,28 +171,29 @@ export function Table({ session, onLeave }: { session: Session; onLeave: () => v
       }
     });
     return idx;
-  }, [suggested, view.rack]);
+  }, [suggested, rack]);
   const focused = options.find((o) => o.hand.id === focus) ?? null;
   const usedIdx = useMemo(() => {
     if (!focused) return null;
     const left = [...focused.used];
     const idx = new Set<number>();
-    view.rack.forEach((t, i) => {
+    rack.forEach((t, i) => {
       if (left[t] > 0) {
         left[t]--;
         idx.add(i);
       }
     });
     return idx;
-  }, [focused, view.rack]);
+  }, [focused, rack]);
 
   const toggle = (i: number) => {
+    if (suppressClick.current) return;
     if (passing) {
-      if (view.rack[i] === JOKER) return setToast('Jokers cannot be passed');
+      if (rack[i] === JOKER) return setToast('Jokers cannot be passed');
       setSel((s) => (s.includes(i) ? s.filter((x) => x !== i) : s.length < ch!.count ? [...s, i] : s));
     } else if (myTurn) setSel((s) => (s[0] === i ? [] : [i]));
   };
-  const selTiles = sel.map((i) => view.rack[i]);
+  const selTiles = sel.map((i) => rack[i]);
   const useSuggestion = () => setSel([...suggestIdx]);
 
   const exchanges = useMemo(() => {
@@ -304,6 +393,9 @@ export function Table({ session, onLeave }: { session: Session; onLeave: () => v
         <div className="mine-head">
           <span className="wind-badge">{WIND_ORDER[(me - view.dealer + 4) % 4]}</span>
           <span className="small">You · {view.scores[me]} pts</span>
+          <button type="button" className="link sort" onClick={() => setPref(sortTiles(rack))}>
+            Sort
+          </button>
           <div className="exposures">
             {view.players[me].exposures.map((e, k) => (
               <span key={k} className="grp">
@@ -314,16 +406,34 @@ export function Table({ session, onLeave }: { session: Session; onLeave: () => v
             ))}
           </div>
         </div>
-        <div className="rack">
-          {view.rack.map((t, i) => {
-            const cls = [
-              sel.includes(i) ? 'selected' : '',
-              suggestIdx.has(i) ? 'suggest' : '',
-              usedIdx && !usedIdx.has(i) ? 'dim' : '',
-              view.lastDrawn !== null && i === view.rack.length - 1 && t === view.lastDrawn ? 'drawn' : '',
-            ].join(' ');
-            return <TileView key={i} t={t} size="lg" className={cls} onClick={() => toggle(i)} />;
-          })}
+        <div className="rack" ref={rackRef}>
+          {drag
+            ? moveItem(rack, drag.from, drag.over).map((t, i) => {
+                if (i !== drag.over) return <TileView key={i} t={t} size="lg" onClick={() => {}} />;
+                // The picked-up tile sits in its landing slot but is drawn under the finger.
+                const g = geometry();
+                const cx = g.left + (i % 7) * (g.w + RACK_GAP) + g.w / 2;
+                const cy = g.top + Math.floor(i / 7) * (g.h + RACK_GAP) + g.h / 2;
+                return (
+                  <TileView
+                    key="dragged"
+                    t={t}
+                    size="lg"
+                    className="dragging"
+                    style={{ transform: `translate(${drag.x - cx}px, ${drag.y - cy - 24}px) scale(1.12)` }}
+                    onClick={() => {}}
+                  />
+                );
+              })
+            : rack.map((t, i) => {
+                const cls = [
+                  sel.includes(i) ? 'selected' : '',
+                  suggestIdx.has(i) ? 'suggest' : '',
+                  usedIdx && !usedIdx.has(i) ? 'dim' : '',
+                  view.lastDrawn !== null && i === rack.length - 1 && t === view.lastDrawn ? 'drawn' : '',
+                ].join(' ');
+                return <TileView key={i} t={t} size="lg" className={cls} onClick={() => toggle(i)} onPointerDown={(e) => startDrag(i, e)} />;
+              })}
         </div>
         <div className="actions">{actions}</div>
       </section>
@@ -405,18 +515,34 @@ export function Table({ session, onLeave }: { session: Session; onLeave: () => v
             )}
             <table className="scores">
               <tbody>
-                {view.players.map((p, i) => (
+                {[...view.players.keys()]
+                  .sort((x, y) => Number(y === result.winner) - Number(x === result.winner))
+                  .map((i) => {
+                    const p = view.players[i];
+                    return (
                   <tr key={i}>
                     <td>
                       <div>{name(i)}</div>
-                      <div className="reveal">
-                        {p.exposures.flatMap((e) => e.tiles).map((t, j) => (
-                          <TileView key={`e${j}`} t={t} size="xs" className="exposed-tile" />
-                        ))}
-                        {(p.rack ?? []).map((t, j) => (
-                          <TileView key={j} t={t} size="xs" />
-                        ))}
-                      </div>
+                      {i === result.winner && result.groups ? (
+                        <div className="win-hand">
+                          {result.groups.map((g, k) => (
+                            <span key={k} className={`grp${g.exposed ? ' exposed' : ''}`}>
+                              {g.tiles.map((t, j) => (
+                                <TileView key={j} t={t} size="sm" />
+                              ))}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="reveal">
+                          {p.exposures.flatMap((e) => e.tiles).map((t, j) => (
+                            <TileView key={`e${j}`} t={t} size="xs" className="exposed-tile" />
+                          ))}
+                          {(p.rack ?? []).map((t, j) => (
+                            <TileView key={j} t={t} size="xs" />
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className="num">
                       {result.payments[i] > 0 ? '+' : ''}
@@ -424,7 +550,8 @@ export function Table({ session, onLeave }: { session: Session; onLeave: () => v
                       <div className="muted small">{view.scores[i]} total</div>
                     </td>
                   </tr>
-                ))}
+                    );
+                  })}
               </tbody>
             </table>
             <div className="btn-col">

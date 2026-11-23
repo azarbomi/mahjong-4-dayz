@@ -231,10 +231,12 @@ interface Props {
   size?: 'lg' | 'md' | 'sm' | 'xs';
   className?: string;
   onClick?: () => void;
+  onPointerDown?: (e: React.PointerEvent) => void;
+  style?: React.CSSProperties;
   disabled?: boolean;
 }
 
-export function TileView({ t, size = 'md', className = '', onClick, disabled }: Props) {
+export function TileView({ t, size = 'md', className = '', onClick, onPointerDown, style, disabled }: Props) {
   const cls = `tile ${size} ${className}`;
   let inner: ReactNode;
   if (size === 'xs') inner = compactFace(t);
@@ -256,7 +258,7 @@ export function TileView({ t, size = 'md', className = '', onClick, disabled }: 
   );
   if (onClick)
     return (
-      <button type="button" className={cls} onClick={onClick} disabled={disabled} aria-label={tileName(t)}>
+      <button type="button" className={cls} onClick={onClick} onPointerDown={onPointerDown} style={style} disabled={disabled} aria-label={tileName(t)}>
         {svg}
       </button>
     );
